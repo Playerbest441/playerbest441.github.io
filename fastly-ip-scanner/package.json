@@ -1,0 +1,14 @@
+{
+  "name": "ripe-atlas-scanner",
+  "version": "1.0.0",
+  "description": "Domain scanner with RIPE Atlas API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.1"
+  }
+}

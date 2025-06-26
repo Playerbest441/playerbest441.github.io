@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <title>اسکنر دامنه با RIPE Atlas</title>
+  <style>
+    body {
+      font-family: 'Vazir', sans-serif;
+      max-width: 700px;
+      margin: 20px auto;
+      direction: rtl;
+      background: #1e272e;
+      color: #f5f6fa;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #27ae60;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      margin-bottom: 20px;
+    }
+    ul {
+      padding: 0;
+      list-style: none;
+    }
+    li {
+      background: #2f3640;
+      margin: 8px 0;
+      padding: 12px;
+      border-radius: 6px;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <h1>اسکنر دامنه با RIPE Atlas</h1>
+  <button id="startBtn">🚀 شروع اسکن</button>
+  <ul id="results"></ul>
+
+  <script>
+    const domains = ['fastly.net', 'github.com', 'reddit.com'];
+    const resultsEl = document.getElementById('results');
+    const startBtn = document.getElementById('startBtn');
+
+    startBtn.onclick = async () => {
+      resultsEl.innerHTML = '';
+      for (const domain of domains) {
+        const li = document.createElement('li');
+        li.textContent = `در حال اسکن دامنه ${domain} ...`;
+        resultsEl.appendChild(li);
+
+        try {
+          const res = await fetch(`/ping/${domain}`);
+          const data = await res.json();
+
+          data.results.sort((a, b) => a.avgRtt - b.avgRtt);
+
+          li.innerHTML = `<b>${domain}</b><br>پینگ‌ها:<br>` +
+            data.results.map(r => `Probe ${r.probe}: ${r.avgRtt.toFixed(2)} ms`).join('<br>');
+        } catch (err) {
+          li.textContent = `خطا در اسکن دامنه ${domain}: ${err}`;
+        }
+      }
+    };
+  </script>
+</body>
+</html>
