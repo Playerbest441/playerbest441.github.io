@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <title>🔍 بررسی دامنه‌های Fastly</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Vazir&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Vazir', sans-serif;
+      direction: rtl;
+      padding: 20px;
+      background: #1e272e;
+      color: #f5f6fa;
+      max-width: 800px;
+      margin: auto;
+      transition: background 0.3s, color 0.3s;
+    }
+    body.light-mode {
+      background: #f5f6fa;
+      color: #2c3e50;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #themeToggle {
+      padding: 10px 20px;
+      background: #3498db;
+      color: white;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    #progressContainer {
+      margin-bottom: 20px;
+    }
+    #currentDomain {
+      text-align: center;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    #progressBarBox {
+      background: #576574;
+      height: 20px;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: #27ae60;
+      transition: width 0.3s;
+    }
+    #results li {
+      background: #2f3640;
+      margin: 5px 0;
+      padding: 10px;
+      border-radius: 5px;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    body.light-mode #results li {
+      background: #dcdde1;
+    }
+    .domain, .type, .data {
+      flex: 1;
+      padding: 0 5px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      direction: ltr;
+    }
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 0.9rem;
+      color: #7f8c8d;
+    }
+    body.light-mode .footer {
+      color: #2c3e50;
+    }
+    .highlight {
+      font-weight: bold;
+      color: #e74c3c;
+    }
+    .copyBtn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2rem;
+      margin-right: 10px;
+      transition: color 0.3s;
+    }
+    .copyBtn:hover {
+      color: #74b9ff;
+    }
+  </style>
+</head>
+<body class="dark-mode">
+  <button id="themeToggle">🌓 تغییر حالت</button>
+  <h2>🔍 بررسی دامنه‌های مرتبط با Fastly</h2>
+  <div id="progressContainer">
+    <div id="currentDomain">در حال آماده‌سازی...</div>
+    <div id="progressBarBox">
+      <div id="progressBar"></div>
+    </div>
+  </div>
+  <ul id="results"></ul>
+  <div class="footer">برنامه‌نویسی توسط <span class="highlight">playerbest441</span> به درخواست <span class="highlight">AminiYT</span></div>
+
+  <script>
+    const defaultDomains = [
+      "reddit.com", "github.com", "cloudflare.com", "fastly.net", "jsdelivr.net",
+      "cdn.jsdelivr.net", "amazonaws.com", "stackoverflow.com", "wikipedia.org"
+      // لیست کامل 1000 دامنه خود را از کد اصلی اینجا کپی کنید
+    ];
+    const fastlyKeywords = ["fastly.net", "fastly.com", "fastlylb.net", "fastly-insights.net", "global.fastly.net", "static.fastly.net"];
+    const fastlyIPRanges = ["151.101.0.0/16", "185.31.16.0/22", "199.232.0.0/16", "146.75.0.0/16", "103.245.222.0/23"];
+
+    const resultsUl = document.getElementById('results');
+    const progressBar = document.getElementById('progressBar');
+    const currentDomainEl = document.getElementById('currentDomain');
+    const themeToggle = document.getElementById('themeToggle');
+
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('light-mode');
+      document.body.classList.toggle('dark-mode');
+      localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+    });
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light-mode');
+      document.body.classList.remove('dark-mode');
+    }
+
+    function ipToNumber(ip) {
+      return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet), 0) >>> 0;
+    }
+
+    function isIPInRange(ip, ranges) {
+      const ipNum = ipToNumber(ip);
+      for (const range of ranges) {
+        const [startIP, prefix] = range.split('/');
+        const mask = 0xffffffff << (32 - parseInt(prefix));
+        const startNum = ipToNumber(startIP);
+        if ((ipNum & mask) === (startNum & mask)) return true;
+      }
+      return false;
+    }
+
+    function isFastlyRelated(record) {
+      if (record.type === 'CNAME') return fastlyKeywords.some(k => record.data.includes(k));
+      if (record.type === 'A') return isIPInRange(record.data, fastlyIPRanges);
+      return false;
+    }
+
+    async function fetchDNS(domain) {
+      try {
+        const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=ANY`);
+        const data = await res.json();
+        return (data.Answer || [])
+          .map(ans => ({
+            domain,
+            type: ans.type === 1 ? 'A' : ans.type === 5 ? 'CNAME' : null,
+            data: ans.data
+          }))
+          .filter(record => record.type && isFastlyRelated(record));
+      } catch {
+        return [];
+      }
+    }
+
+    async function loadAll() {
+      for (let i = 0; i < defaultDomains.length; i++) {
+        const domain = defaultDomains[i];
+        currentDomainEl.textContent = 'در حال بررسی: ' + domain;
+        const records = await fetchDNS(domain);
+        records.forEach(record => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="domain">${record.domain}</span>
+            <span class="type">${record.type}</span>
+            <span class="data">${record.data}</span>
+            <button class="copyBtn" title="کپی">📋</button>
+          `;
+          const copyBtn = li.querySelector('.copyBtn');
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(record.data).then(() => {
+              copyBtn.textContent = '✔️';
+              setTimeout(() => copyBtn.textContent = '📋', 1500);
+            });
+          });
+          resultsUl.appendChild(li);
+        });
+        progressBar.style.width = ((i + 1) / defaultDomains.length * 100).toFixed(2) + '%';
+      }
+      currentDomainEl.textContent = '✅ بررسی کامل شد';
+      if (resultsUl.children.length === 0) {
+        resultsUl.innerHTML = '<li style="color: #e74c3c; text-align: center;">هیچ رکوردی یافت نشد.</li>';
+      }
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>
