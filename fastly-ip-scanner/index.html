@@ -2,7 +2,7 @@
 <html lang="fa">
 <head>
   <meta charset="UTF-8" />
-  <title>🔍 بررسی دامنه‌های Fastly</title>
+  <title>🔍 بررسی دامنه‌های Fastly و پینگ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://fonts.googleapis.com/css2?family=Vazir&display=swap" rel="stylesheet">
   <style>
@@ -66,7 +66,7 @@
     body.light-mode #results li {
       background: #dcdde1;
     }
-    .domain, .type, .data {
+    .domain, .type, .data, .ping, .operator {
       flex: 1;
       padding: 0 5px;
       overflow: hidden;
@@ -98,11 +98,24 @@
     .copyBtn:hover {
       color: #74b9ff;
     }
+    #operatorSelect {
+      padding: 10px;
+      margin-bottom: 20px;
+      border-radius: 5px;
+    }
   </style>
 </head>
 <body class="dark-mode">
   <button id="themeToggle">🌓 تغییر حالت</button>
-  <h2>🔍 بررسی دامنه‌های مرتبط با Fastly</h2>
+  <h2>🔍 بررسی دامنه‌های مرتبط با Fastly و پینگ</h2>
+  <select id="operatorSelect">
+    <option value="unknown">اپراتور را انتخاب کنید</option>
+    <option value="mci">همراه اول</option>
+    <option value="irancell">ایرانسل</option>
+    <option value="rightel">رایتل</option>
+    <option value="mci-tdlte">همراه اول TD-LTE</option>
+    <option value="irancell-tdlte">ایرانسل TD-LTE</option>
+  </select>
   <div id="progressContainer">
     <div id="currentDomain">در حال آماده‌سازی...</div>
     <div id="progressBarBox">
@@ -116,15 +129,17 @@
     const defaultDomains = [
       "reddit.com", "github.com", "cloudflare.com", "fastly.net", "jsdelivr.net",
       "cdn.jsdelivr.net", "amazonaws.com", "stackoverflow.com", "wikipedia.org"
-      // لیست کامل 1000 دامنه خود را از کد اصلی اینجا کپی کنید
+      // لیست کامل 1000 دامنه خود را اینجا کپی کنید
     ];
     const fastlyKeywords = ["fastly.net", "fastly.com", "fastlylb.net", "fastly-insights.net", "global.fastly.net", "static.fastly.net"];
     const fastlyIPRanges = ["151.101.0.0/16", "185.31.16.0/22", "199.232.0.0/16", "146.75.0.0/16", "103.245.222.0/23"];
+    const dnsResolver = "https://dns.google/resolve"; // یا از DNS ایرانی مثل شکن: https://dns.shecan.ir/resolve
 
     const resultsUl = document.getElementById('results');
     const progressBar = document.getElementById('progressBar');
     const currentDomainEl = document.getElementById('currentDomain');
     const themeToggle = document.getElementById('themeToggle');
+    const operatorSelect = document.getElementById('operatorSelect');
 
     themeToggle.addEventListener('click', () => {
       document.body.classList.toggle('light-mode');
@@ -159,7 +174,7 @@
 
     async function fetchDNS(domain) {
       try {
-        const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=ANY`);
+        const res = await fetch(`${dnsResolver}?name=${encodeURIComponent(domain)}&type=ANY`);
         const data = await res.json();
         return (data.Answer || [])
           .map(ans => ({
@@ -173,17 +188,34 @@
       }
     }
 
+    async function measurePing(domain) {
+      try {
+        const start = performance.now();
+        await fetch(`https://${domain}`, { mode: 'no-cors' });
+        const end = performance.now();
+        return (end - start).toFixed(2); // زمان پاسخ در میلی‌ثانیه
+      } catch {
+        return 'N/A';
+      }
+    }
+
     async function loadAll() {
+      const operator = operatorSelect.value;
+      const results = [];
       for (let i = 0; i < defaultDomains.length; i++) {
         const domain = defaultDomains[i];
-        currentDomainEl.textContent = 'در حال بررسی: ' + domain;
+        currentDomainEl.textContent = `در حال بررسی: ${domain}`;
         const records = await fetchDNS(domain);
+        const ping = await measurePing(domain);
         records.forEach(record => {
+          results.push({ ...record, ping, operator });
           const li = document.createElement('li');
           li.innerHTML = `
             <span class="domain">${record.domain}</span>
             <span class="type">${record.type}</span>
             <span class="data">${record.data}</span>
+            <span class="ping">${ping} ms</span>
+            <span class="operator">${operator === 'unknown' ? 'نامشخص' : operator}</span>
             <button class="copyBtn" title="کپی">📋</button>
           `;
           const copyBtn = li.querySelector('.copyBtn');
@@ -201,6 +233,28 @@
       if (resultsUl.children.length === 0) {
         resultsUl.innerHTML = '<li style="color: #e74c3c; text-align: center;">هیچ رکوردی یافت نشد.</li>';
       }
+      // مرتب‌سازی نتایج بر اساس پینگ
+      const sortedResults = results.sort((a, b) => parseFloat(a.ping) - parseFloat(b.ping));
+      resultsUl.innerHTML = '';
+      sortedResults.forEach(record => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span class="domain">${record.domain}</span>
+          <span class="type">${record.type}</span>
+          <span class="data">${record.data}</span>
+          <span class="ping">${record.ping} ms</span>
+          <span class="operator">${record.operator === 'unknown' ? 'نامشخص' : record.operator}</span>
+          <button class="copyBtn" title="کپی">📋</button>
+        `;
+        const copyBtn = li.querySelector('.copyBtn');
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(record.data).then(() => {
+            copyBtn.textContent = '✔️';
+            setTimeout(() => copyBtn.textContent = '📋', 1500);
+          });
+        });
+        resultsUl.appendChild(li);
+      });
     }
 
     loadAll();
